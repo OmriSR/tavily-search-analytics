@@ -33,3 +33,9 @@ htmlcov/
 
 # Local config
 .env.local
+
+# Claude Code
+CLAUDE.md
+PLAN.md
+TODO.md
+instructions/
