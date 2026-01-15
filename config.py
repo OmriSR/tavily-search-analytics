@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     tavily_api_key: str = ""
     openai_api_key: str = ""
 
+    # Tavily API settings
+    tavily_api_url: str = "https://api.tavily.com/search"
+
     # Service ports
     main_service_port: int = 8000
     enricher_service_port: int = 8001
