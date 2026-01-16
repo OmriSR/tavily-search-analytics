@@ -54,14 +54,10 @@ class EnrichmentClient:
         """
         return self._base_delay * (2**attempt)
 
-    async def enrich(self, url: str) -> EnrichResponse | None:
+    async def enrich(self, url: str) -> EnrichResponse:
         """Attempt to enrich a URL with exponential backoff retry.
 
-        Args:
-            url: The URL to enrich
-
-        Returns:
-            EnrichResponse if successful, None if all retries exhausted
+        Returns EnrichResponse with enriched=True on success, enriched=False on failure.
         """
         last_exception: Exception | None = None
 
@@ -71,10 +67,10 @@ class EnrichmentClient:
                     response = await client.post(
                         f"{self._base_url}/enrich",
                         json={"url": url},
-                        timeout=10.0,
+                        timeout=2.0,
                     )
-                    response.raise_for_status()
-                    data = response.json()
+                    response.raise_for_status()  # raise error for failed enrichment
+                    data: dict = response.json()
                     return EnrichResponse(url=url, enriched=data.get("enriched", False))
 
             except (httpx.HTTPStatusError, httpx.RequestError) as e:
@@ -93,4 +89,4 @@ class EnrichmentClient:
                         f"Final error: {last_exception}"
                     )
 
-        return None
+        return EnrichResponse(url=url, enriched=False)
