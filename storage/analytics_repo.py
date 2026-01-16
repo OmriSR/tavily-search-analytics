@@ -42,6 +42,7 @@ async def increment_url_count(url: str, domain: str, timestamp: str) -> None:
         """,
         (url, domain, timestamp, timestamp, timestamp),
     )
+    breakpoint()
 
 
 async def increment_domain_count(domain: str, url: str, timestamp: str) -> None:
@@ -274,25 +275,35 @@ async def process_event_atomically(
     timestamp: str,
 ) -> bool:
     """
-    Process an event atomically: check duplicate, mark processed, update counters.
+    Process an event atomically: check duplicate, mark processed, update counters
 
     It works as 'All Or Nothing' - if crash or shutdown mid transaction, all writes to the DB are deleted.
     By that we insure that an event will be marked as processed only if it was completed
 
     Returns True if event was processed, False if duplicate.
+
+    Note: Handles race conditions where concurrent events pass the is_duplicate check
+    but then one fails on insert due to UNIQUE constraint - this is treated as a duplicate.
     """
-    async with transaction():
-        # early return (duplicate events correctness)
-        if await is_duplicate(event_id):
-            logger.debug(f"Duplicate event {event_id}, skipping")
-            return False
+    from sqlite3 import IntegrityError
 
-        # Mark as processed
-        await mark_processed(event_id)
+    try:
+        async with transaction():
+            # early return (duplicate events correctness)
+            if await is_duplicate(event_id):
+                logger.debug(f"Duplicate event {event_id}, skipping")
+                return False
 
-        # Update counters
-        await increment_url_count(url, domain, timestamp)
-        await increment_domain_count(domain, url, timestamp)
+            await mark_processed(event_id)
 
-        logger.debug(f"Processed event {event_id} for URL {url}")
-        return True
+            await increment_url_count(url, domain, timestamp)
+            await increment_domain_count(domain, url, timestamp)
+
+            logger.debug(f"Processed event {event_id} for URL {url}")
+            return True
+    except IntegrityError:
+        # possibe race condition: 2+ coroutines check dups for a given event -> both return false (neither marked as processesd yet) -> one of them marks the event as processed first -> the second gets integrity error when trying
+        # this can be possible since "transaction()" is a DB lock but not pytonic.
+        # this is valid deduplication inforcment (duplicate events correctness)
+        logger.debug(f"Duplicate event {event_id} detected via constraint, skipping")
+        return False
