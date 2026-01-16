@@ -276,10 +276,13 @@ async def process_event_atomically(
     """
     Process an event atomically: check duplicate, mark processed, update counters.
 
+    It works as 'All Or Nothing' - if crash or shutdown mid transaction, all writes to the DB are deleted.
+    By that we insure that an event will be marked as processed only if it was completed
+
     Returns True if event was processed, False if duplicate.
     """
     async with transaction():
-        # Check for duplicate
+        # early return (duplicate events correctness)
         if await is_duplicate(event_id):
             logger.debug(f"Duplicate event {event_id}, skipping")
             return False

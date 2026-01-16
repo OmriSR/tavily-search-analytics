@@ -26,7 +26,7 @@ class SearchResponse(BaseModel):
     answer: str
     sources: list[Source]
     created_at: str
-    cached: bool = False
+    is_cached_response: bool = False
 
 
 class QueryAnalytics(BaseModel):

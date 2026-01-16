@@ -12,8 +12,7 @@ logger = logging.getLogger(__name__)
 async def get_cached_response(query_hash: str) -> dict | None:
     """
     Retrieve cached response if not expired.
-
-    Returns None if cache miss or expired.
+    returns None if cache miss or expired.
     """
     db = await get_database()
     now = datetime.now(UTC).isoformat()
@@ -38,9 +37,8 @@ async def get_cached_response(query_hash: str) -> dict | None:
 
 async def cache_response(query_hash: str, response: dict, ttl_seconds: int) -> None:
     """
-    Store response in cache with TTL expiration.
-
-    Uses upsert to handle existing entries.
+    Store response in cache with TTL expiration
+    if query hash already exists 
     """
     db = await get_database()
     expires_at = (datetime.now(UTC) + timedelta(seconds=ttl_seconds)).isoformat()
