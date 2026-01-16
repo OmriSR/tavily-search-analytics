@@ -100,7 +100,7 @@ async def search(request: SearchRequest) -> SearchResponse:
         )
         await processor.enqueue(event)
 
-    # Step 5: Update query stats (synchronous for simplicity)
+    # update query stats (synchronously)
     await update_query_stats(
         query_hash=query_hash,
         query_text=request.query,
