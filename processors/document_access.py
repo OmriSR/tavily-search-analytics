@@ -128,7 +128,7 @@ class DocumentAccessProcessor:
 
         logger.info(f"Processed event {event.event_id} for URL: {event.url}")
 
-        # Handle enrichment outside transaction since it is not
+        # Handle enrichment outside transaction since it is not part of the atomic counter update
         await self._handle_enrichment(event.url)
 
     async def _handle_enrichment(self, url: str) -> None:

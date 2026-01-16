@@ -1,5 +1,6 @@
 """Main FastAPI application entry point for Tavily Search Analytics Service."""
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -7,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from config import settings
-from storage.database import init_database
+from storage.database import get_database_connection, init_database
 
 # Configure logging
 logging.basicConfig(

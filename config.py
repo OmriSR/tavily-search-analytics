@@ -1,6 +1,6 @@
 """Configuration settings for Tavily Search Analytics Service."""
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -22,7 +22,8 @@ class Settings(BaseSettings):
     database_path: str = "analytics.db"
 
     # Cache settings
-    cache_ttl_seconds: int = 3600  # 1 hour
+    cache_ttl_seconds: int = 86400  # 24 hours
+    snippet_max_length: int = 200
 
     # Retry settings
     max_retries: int = 5
@@ -35,11 +36,7 @@ class Settings(BaseSettings):
     # LLM settings
     openai_model: str = "gpt-4o-mini"
 
-    class Config:
-        """Pydantic settings configuration."""
-
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 
 # Global settings instance

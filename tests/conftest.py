@@ -1,6 +1,5 @@
 """Pytest fixtures for isolated testing."""
 
-import asyncio
 import tempfile
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
@@ -18,15 +17,6 @@ from models.events import DocumentAccessEvent
 from models.schemas import EnrichResponse
 from processors.document_access import DocumentAccessProcessor
 from services.enrichment_client import EnrichmentClient
-
-
-# Event loop fixture for async tests
-@pytest.fixture(scope="session")
-def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
-    """Create event loop for async tests."""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
 
 
 async def create_schema(db: aiosqlite.Connection) -> None:
