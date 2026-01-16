@@ -1,7 +1,10 @@
 """Pytest fixtures for isolated testing."""
 
 import asyncio
+import tempfile
 from collections.abc import AsyncGenerator, Generator
+from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -26,22 +29,19 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
     loop.close()
 
 
-@pytest_asyncio.fixture
-async def test_db() -> AsyncGenerator[aiosqlite.Connection, None]:
-    """In-memory SQLite database for isolated testing."""
-    db = await aiosqlite.connect(":memory:")
-    await db.execute("PRAGMA journal_mode=WAL")
-    await db.execute("PRAGMA synchronous=NORMAL")
-
-    # Create all required tables
-    await db.execute("""
+async def create_schema(db: aiosqlite.Connection) -> None:
+    """Create all required tables in the database."""
+    await db.execute(
+        """
         CREATE TABLE IF NOT EXISTS processed_events (
             event_id TEXT PRIMARY KEY,
             processed_at TEXT NOT NULL
         )
-    """)
+    """
+    )
 
-    await db.execute("""
+    await db.execute(
+        """
         CREATE TABLE IF NOT EXISTS url_stats (
             url TEXT PRIMARY KEY,
             domain TEXT NOT NULL,
@@ -50,9 +50,11 @@ async def test_db() -> AsyncGenerator[aiosqlite.Connection, None]:
             last_accessed TEXT NOT NULL,
             enriched INTEGER NOT NULL DEFAULT 0
         )
-    """)
+    """
+    )
 
-    await db.execute("""
+    await db.execute(
+        """
         CREATE TABLE IF NOT EXISTS domain_stats (
             domain TEXT PRIMARY KEY,
             access_count INTEGER NOT NULL DEFAULT 0,
@@ -60,17 +62,21 @@ async def test_db() -> AsyncGenerator[aiosqlite.Connection, None]:
             first_accessed TEXT NOT NULL,
             last_accessed TEXT NOT NULL
         )
-    """)
+    """
+    )
 
-    await db.execute("""
+    await db.execute(
+        """
         CREATE TABLE IF NOT EXISTS query_cache (
             query_hash TEXT PRIMARY KEY,
             response_json TEXT NOT NULL,
             expires_at TEXT NOT NULL
         )
-    """)
+    """
+    )
 
-    await db.execute("""
+    await db.execute(
+        """
         CREATE TABLE IF NOT EXISTS query_stats (
             query_hash TEXT PRIMARY KEY,
             query_text TEXT NOT NULL,
@@ -81,15 +87,18 @@ async def test_db() -> AsyncGenerator[aiosqlite.Connection, None]:
             last_seen TEXT NOT NULL,
             avg_response_time_ms REAL NOT NULL DEFAULT 0.0
         )
-    """)
+    """
+    )
 
-    await db.execute("""
+    await db.execute(
+        """
         CREATE TABLE IF NOT EXISTS query_urls (
             query_hash TEXT NOT NULL,
             url TEXT NOT NULL,
             PRIMARY KEY (query_hash, url)
         )
-    """)
+    """
+    )
 
     await db.execute(
         "CREATE INDEX IF NOT EXISTS idx_url_stats_domain ON url_stats(domain)"
@@ -100,40 +109,70 @@ async def test_db() -> AsyncGenerator[aiosqlite.Connection, None]:
 
     await db.commit()
 
-    yield db
 
+@pytest_asyncio.fixture
+async def test_db() -> AsyncGenerator[aiosqlite.Connection, None]:
+    """In-memory SQLite database for isolated testing."""
+    db = await aiosqlite.connect(":memory:")
+    await db.execute("PRAGMA journal_mode=WAL")
+    await db.execute("PRAGMA synchronous=NORMAL")
+    await create_schema(db)
+    yield db
     await db.close()
 
 
 @pytest.fixture
 def mock_db_connection(test_db: aiosqlite.Connection) -> Generator[None, None, None]:
     """Patch database connection to use test database."""
+
+    @asynccontextmanager
+    async def get_test_db_connection() -> AsyncGenerator[aiosqlite.Connection, None]:
+        yield test_db
+
     with (
-        patch("storage.database._db", test_db),
-        patch("storage.database.get_database", return_value=test_db),
+        patch("storage.database.get_database_connection", get_test_db_connection),
     ):
         yield
 
 
 @pytest_asyncio.fixture
-async def initialized_test_db(
-    test_db: aiosqlite.Connection,
-) -> AsyncGenerator[aiosqlite.Connection, None]:
-    """Test database with patched get_database function."""
-    async def get_test_db() -> aiosqlite.Connection:
-        return test_db
+async def initialized_test_db() -> AsyncGenerator[Path, None]:
+    """Test database with patched get_database_connection function.
 
-    # Also need to patch the transaction function to use our test db
-    from storage.database import transaction as original_transaction
+    Uses a temp file database so multiple connections can access the same data,
+    which better imitates real production behavior.
+    """
+    # Create a temp file for the database
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = Path(tmp.name)
+
+    # Initialize the schema
+    init_db = await aiosqlite.connect(db_path)
+    await init_db.execute("PRAGMA journal_mode=WAL")
+    await init_db.execute("PRAGMA synchronous=NORMAL")
+    await create_schema(init_db)
+    await init_db.close()
+
+    @asynccontextmanager
+    async def get_test_db_connection() -> AsyncGenerator[aiosqlite.Connection, None]:
+        """Each caller gets their own connection to the shared database file."""
+        async with aiosqlite.connect(db_path) as db:
+            await db.execute("PRAGMA journal_mode=WAL")
+            await db.execute("PRAGMA synchronous=NORMAL")
+            yield db
 
     with (
-        patch("storage.database._db", test_db),
-        patch("storage.database.get_database", get_test_db),
-        patch("storage.analytics_repo.get_database", get_test_db),
-        patch("storage.analytics_repo.transaction", original_transaction),
-        patch("storage.cache.get_database", get_test_db),
+        patch("storage.database.get_database_connection", get_test_db_connection),
+        patch("storage.analytics_repo.get_database_connection", get_test_db_connection),
+        patch("storage.cache.get_database_connection", get_test_db_connection),
     ):
-        yield test_db
+        yield db_path
+
+    # Cleanup temp file
+    db_path.unlink(missing_ok=True)
+    # Also cleanup WAL and SHM files if they exist
+    Path(f"{db_path}-wal").unlink(missing_ok=True)
+    Path(f"{db_path}-shm").unlink(missing_ok=True)
 
 
 @pytest.fixture
@@ -177,7 +216,7 @@ def create_mock_enricher_with_failures(
 
 @pytest_asyncio.fixture
 async def processor_with_test_db(
-    initialized_test_db: aiosqlite.Connection,
+    initialized_test_db: Path,
 ) -> AsyncGenerator[DocumentAccessProcessor, None]:
     """Document Access Processor with test database and mock enricher."""
     processor = DocumentAccessProcessor()

@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from config import settings
-from storage.database import close_database, init_database
+from storage.database import init_database
 
 # Configure logging
 logging.basicConfig(
@@ -22,10 +22,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage application lifespan - startup and shutdown events."""
     # Startup
     logger.info("Starting Tavily Search Analytics Service...")
+
     await init_database()
     logger.info(f"Database initialized at {settings.database_path}")
 
-    # Import and start processor here to avoid circular imports
+    # Import and start processor in the background
     from processors.document_access import processor
 
     await processor.start()
@@ -36,9 +37,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Shutdown
     logger.info("Shutting down...")
     await processor.stop()
-    logger.info("Document Access Processor stopped")
-    await close_database()
-    logger.info("Database connection closed")
+    logger.info("Document Access Processor stopped")    
 
 
 app = FastAPI(

@@ -208,7 +208,6 @@ async def test_concurrent_duplicate_events_handled_correctly(
 
     # Counter should be exactly 1
     stats = await get_url_stats(url)
-    breakpoint()
     assert stats is not None, "URL stats should exist after successful processing"
     assert stats["access_count"] == 1, "Count should be 1 despite concurrent attempts"
 
