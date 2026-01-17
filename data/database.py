@@ -44,6 +44,7 @@ async def _create_schema(db: aiosqlite.Connection) -> None:
         """
         CREATE TABLE IF NOT EXISTS url_stats (
             url TEXT PRIMARY KEY,
+            url_hash TEXT NOT NULL,
             domain TEXT NOT NULL,
             access_count INTEGER NOT NULL DEFAULT 0,
             first_accessed TEXT NOT NULL,
@@ -98,6 +99,9 @@ async def _create_schema(db: aiosqlite.Connection) -> None:
     # Create indexes for common queries
     await db.execute(
         "CREATE INDEX IF NOT EXISTS idx_url_stats_domain ON url_stats(domain)"
+    )
+    await db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_url_stats_url_hash ON url_stats(url_hash)"
     )
 
 

@@ -1,5 +1,3 @@
-"""Search API endpoint."""
-
 import hashlib
 import logging
 from datetime import UTC, datetime
@@ -26,6 +24,11 @@ llm_service = LLMService()
 def compute_query_hash(query: str) -> str:
     """Compute SHA-256 hash of query for caching/tracking."""
     return hashlib.sha256(query.encode()).hexdigest()
+
+
+def compute_url_hash(url: str) -> str:
+    """Compute SHA-256 hash of URL for analytics lookup."""
+    return hashlib.sha256(url.encode()).hexdigest()
 
 
 def extract_domain(url: str) -> str:
@@ -63,9 +66,11 @@ async def _process_search_analytics(
     urls = []
     for result in tavily_result.results:
         domain = extract_domain(result.url)
+        url_hash = compute_url_hash(result.url)
         urls.append(result.url)
         event = DocumentAccessEvent(
             url=result.url,
+            url_hash=url_hash,
             domain=domain,
             query_hash=query_hash,
             request_id=tavily_result.request_id,
@@ -85,7 +90,7 @@ async def _process_search_analytics(
 async def search(
     request: SearchRequest, background_tasks: BackgroundTasks
 ) -> SearchResponse:
-    """Execute a search query and return AI-generated answer with sources.
+    """Execute a search query and return AI-generated answer with sources while updating analytics
 
     Flow:
     1. Call Tavily API for search results
@@ -125,7 +130,7 @@ async def search(
         created_at=datetime.now(UTC).isoformat(),
     )
 
-    # Schedule analytics processing after response is sent for reduced latancy
+    # schedule analytics processing after response is sent for reduced latancy
     background_tasks.add_task(
         _process_search_analytics, query_hash, request.query, tavily_result
     )

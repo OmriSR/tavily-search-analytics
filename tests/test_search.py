@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import BackgroundTasks
 
-from api.search import compute_query_hash, extract_domain
+from api.search import compute_query_hash, compute_url_hash, extract_domain
 from core.models.schemas import SearchRequest, SearchResponse
 from core.services.tavily_client import TavilyResult, TavilySearchResult
 
@@ -31,6 +31,29 @@ class TestQueryHash:
         query_hash = compute_query_hash("test query")
         assert len(query_hash) == 64
         assert all(c in "0123456789abcdef" for c in query_hash)
+
+
+class TestUrlHash:
+    """Tests for URL hash computation."""
+
+    def test_compute_url_hash_deterministic(self) -> None:
+        """Same URL should produce same hash."""
+        url = "https://example.com/page"
+        hash1 = compute_url_hash(url)
+        hash2 = compute_url_hash(url)
+        assert hash1 == hash2
+
+    def test_compute_url_hash_different_urls(self) -> None:
+        """Different URLs should produce different hashes."""
+        hash1 = compute_url_hash("https://example.com/page1")
+        hash2 = compute_url_hash("https://example.com/page2")
+        assert hash1 != hash2
+
+    def test_compute_url_hash_is_sha256(self) -> None:
+        """Hash should be 64 character hex string (SHA-256)."""
+        url_hash = compute_url_hash("https://example.com/test")
+        assert len(url_hash) == 64
+        assert all(c in "0123456789abcdef" for c in url_hash)
 
 
 class TestDomainExtraction:

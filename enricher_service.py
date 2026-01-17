@@ -1,11 +1,9 @@
-"""Standalone enricher service for URL enrichment simulation."""
+"""Standalone enricher service"""
 
 import asyncio
 import logging
 import random
-
 from fastapi import FastAPI, HTTPException
-
 from config import settings
 from core.models.schemas import EnrichRequest, EnrichResponse
 
@@ -28,14 +26,15 @@ async def enrich_url(request: EnrichRequest) -> EnrichResponse:
     """
     Enrich a URL with additional metadata
     * Simulates processing with random failures (about ~30% of requests will fail)
-    * the failing rate can be set in settings
+    * the failing rate and simulated processing delay can be set in settings
     """
     logger.info(f"Enrichment request for URL: {request.url}")
 
     # processing delay
     await asyncio.sleep(settings.enricher_delay_seconds)
 
-    # random failures (if a random number over uniform distribution is smaller than the failure rate - fail)
+    # random failures
+    # (if a random number over uniform distribution is smaller than the failure rate - fail)
     if random.random() < settings.enricher_failure_rate:
         logger.warning(f"Simulated failure for URL: {request.url}")
         raise HTTPException(

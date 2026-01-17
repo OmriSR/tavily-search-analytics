@@ -45,6 +45,7 @@ class QueryAnalytics(BaseModel):
 class UrlAnalytics(BaseModel):
     """Analytics for a specific URL."""
 
+    url_hash: str
     url: str
     domain: str
     access_count: int

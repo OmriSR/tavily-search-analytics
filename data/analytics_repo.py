@@ -28,18 +28,18 @@ async def mark_processed(event_id: str, db: aiosqlite.Connection) -> None:
 
 
 async def increment_url_count(
-    url: str, domain: str, timestamp: str, db: aiosqlite.Connection
+    url: str, url_hash: str, domain: str, timestamp: str, db: aiosqlite.Connection
 ) -> None:
     """Increment URL access count (upsert operation)."""
     await db.execute(
         """
-        INSERT INTO url_stats (url, domain, access_count, first_accessed, last_accessed, enriched)
-        VALUES (?, ?, 1, ?, ?, 0)
+        INSERT INTO url_stats (url, url_hash, domain, access_count, first_accessed, last_accessed, enriched)
+        VALUES (?, ?, ?, 1, ?, ?, 0)
         ON CONFLICT(url) DO UPDATE SET
             access_count = access_count + 1,
             last_accessed = ?
         """,
-        (url, domain, timestamp, timestamp, timestamp),
+        (url, url_hash, domain, timestamp, timestamp, timestamp),
     )
 
 
@@ -152,16 +152,16 @@ async def update_query_stats(
         await db.commit()
 
 
-async def get_url_stats(url: str) -> dict | None:
-    """Retrieve URL analytics."""
+async def get_url_stats(url_hash: str) -> dict | None:
+    """Retrieve URL analytics by URL hash."""
     async with get_database_connection() as db:
         cursor = await db.execute(
             """
-            SELECT url, domain, access_count, first_accessed, last_accessed, enriched
+            SELECT url, url_hash, domain, access_count, first_accessed, last_accessed, enriched
             FROM url_stats
-            WHERE url = ?
+            WHERE url_hash = ?
             """,
-            (url,),
+            (url_hash,),
         )
         row = await cursor.fetchone()
         if row is None:
@@ -169,11 +169,12 @@ async def get_url_stats(url: str) -> dict | None:
 
         return {
             "url": row[0],
-            "domain": row[1],
-            "access_count": row[2],
-            "first_accessed": row[3],
-            "last_accessed": row[4],
-            "enriched": bool(row[5]),
+            "url_hash": row[1],  # added for manual testing
+            "domain": row[2],
+            "access_count": row[3],
+            "first_accessed": row[4],
+            "last_accessed": row[5],
+            "enriched": bool(row[6]),  # important for future analysis
         }
 
 
@@ -210,7 +211,7 @@ async def get_domain_stats(domain: str) -> dict | None:
 
 
 async def get_query_stats(query_hash: str) -> dict | None:
-    """Retrieve query analytics."""
+    """retrieve query analytics"""
     async with get_database_connection() as db:
         cursor = await db.execute(
             """
@@ -225,7 +226,8 @@ async def get_query_stats(query_hash: str) -> dict | None:
         if row is None:
             return None
 
-        # Get URLs associated with this query
+        # since we cant list urls in the query table
+        # we get URLs associated with this query from a child table
         url_cursor = await db.execute(
             "SELECT url FROM query_urls WHERE query_hash = ?",
             (query_hash,),
@@ -233,7 +235,9 @@ async def get_query_stats(query_hash: str) -> dict | None:
         urls = [r[0] for r in await url_cursor.fetchall()]
 
         return {
-            "query_hash": row[0],  # add for testing
+            "query_hash": row[
+                0
+            ],  # added for manual testing - production code will not expose
             "query": row[1],
             "total_requests": row[2],
             "successful_requests": row[3],
@@ -269,6 +273,7 @@ async def mark_enriched(url: str) -> None:
 async def process_event_atomically(
     event_id: str,
     url: str,
+    url_hash: str,
     domain: str,
     timestamp: str,
 ) -> bool:
@@ -293,7 +298,7 @@ async def process_event_atomically(
                 return False
 
             await mark_processed(event_id, db)
-            await increment_url_count(url, domain, timestamp, db)
+            await increment_url_count(url, url_hash, domain, timestamp, db)
             await increment_domain_count(domain, url, timestamp, db)
 
             logger.debug(f"Processed event {event_id} for URL {url}")

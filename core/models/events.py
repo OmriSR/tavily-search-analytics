@@ -10,6 +10,7 @@ class DocumentAccessEvent:
     """Event emitted when a document URL is accessed during search."""
 
     url: str
+    url_hash: str
     domain: str
     query_hash: str
     request_id: str
@@ -20,6 +21,8 @@ class DocumentAccessEvent:
         """Validate event data after initialization."""
         if not self.url:
             raise ValueError("URL cannot be empty")
+        if not self.url_hash:
+            raise ValueError("URL hash cannot be empty")
         if not self.domain:
             raise ValueError("Domain cannot be empty")
         if not self.query_hash:

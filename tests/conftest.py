@@ -13,6 +13,7 @@ import pytest_asyncio
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
+from api.search import compute_url_hash
 from core.document_access_processor import DocumentAccessProcessor
 from core.models.events import DocumentAccessEvent
 from core.models.schemas import EnrichResponse
@@ -34,6 +35,7 @@ async def create_schema(db: aiosqlite.Connection) -> None:
         """
         CREATE TABLE IF NOT EXISTS url_stats (
             url TEXT PRIMARY KEY,
+            url_hash TEXT NOT NULL,
             domain TEXT NOT NULL,
             access_count INTEGER NOT NULL DEFAULT 0,
             first_accessed TEXT NOT NULL,
@@ -82,6 +84,9 @@ async def create_schema(db: aiosqlite.Connection) -> None:
 
     await db.execute(
         "CREATE INDEX IF NOT EXISTS idx_url_stats_domain ON url_stats(domain)"
+    )
+    await db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_url_stats_url_hash ON url_stats(url_hash)"
     )
 
     await db.commit()
@@ -210,8 +215,10 @@ def create_test_event(
     event_id: str | None = None,
 ) -> DocumentAccessEvent:
     """Factory function to create test events."""
+    url_hash = compute_url_hash(url)
     kwargs: dict[str, Any] = {
         "url": url,
+        "url_hash": url_hash,
         "domain": domain,
         "query_hash": query_hash,
         "request_id": request_id,

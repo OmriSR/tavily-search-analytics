@@ -118,6 +118,7 @@ class DocumentAccessProcessor:
         processed = await process_event_atomically(
             event_id=event.event_id,
             url=event.url,
+            url_hash=event.url_hash,
             domain=event.domain,
             timestamp=event.timestamp,
         )

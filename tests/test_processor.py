@@ -21,12 +21,14 @@ async def test_deduplication_same_event_id_processed_once(initialized_test_db) -
     first_result = await process_event_atomically(
         event_id=event.event_id,
         url=event.url,
+        url_hash=event.url_hash,
         domain=event.domain,
         timestamp=event.timestamp,
     )
     second_result = await process_event_atomically(
         event_id=event.event_id,
         url=event.url,
+        url_hash=event.url_hash,
         domain=event.domain,
         timestamp=event.timestamp,
     )
@@ -36,7 +38,7 @@ async def test_deduplication_same_event_id_processed_once(initialized_test_db) -
     assert second_result is False
 
     # Verify URL count is 1, not 2
-    stats = await get_url_stats(event.url)
+    stats = await get_url_stats(event.url_hash)
     assert stats is not None
     assert stats["access_count"] == 1
 
@@ -46,6 +48,10 @@ async def test_url_counter_increments_correctly(initialized_test_db) -> None:
     """Verify access count increases for each unique event."""
     url = "https://example.com/test-page"
     domain = "example.com"
+
+    # Create one event to get the url_hash
+    sample_event = create_test_event(url=url, domain=domain)
+    url_hash = sample_event.url_hash
 
     # Process 3 events with different event_ids but same URL
     for i in range(3):
@@ -57,11 +63,12 @@ async def test_url_counter_increments_correctly(initialized_test_db) -> None:
         await process_event_atomically(
             event_id=event.event_id,
             url=event.url,
+            url_hash=event.url_hash,
             domain=event.domain,
             timestamp=event.timestamp,
         )
 
-    stats = await get_url_stats(url)
+    stats = await get_url_stats(url_hash)
     assert stats is not None
     assert stats["access_count"] == 3
 
@@ -80,11 +87,12 @@ async def test_domain_extraction_preserves_subdomain(initialized_test_db) -> Non
     await process_event_atomically(
         event_id=event.event_id,
         url=event.url,
+        url_hash=event.url_hash,
         domain=event.domain,
         timestamp=event.timestamp,
     )
 
-    stats = await get_url_stats(url)
+    stats = await get_url_stats(event.url_hash)
     assert stats is not None
     assert stats["domain"] == "api.docs.example.com"
 
@@ -107,6 +115,7 @@ async def test_enrichment_called_for_new_urls(initialized_test_db) -> None:
     await process_event_atomically(
         event_id=event.event_id,
         url=event.url,
+        url_hash=event.url_hash,
         domain=event.domain,
         timestamp=event.timestamp,
     )
@@ -139,6 +148,7 @@ async def test_enrichment_not_called_for_already_enriched(initialized_test_db) -
     await process_event_atomically(
         event_id=event1.event_id,
         url=event1.url,
+        url_hash=event1.url_hash,
         domain=event1.domain,
         timestamp=event1.timestamp,
     )
@@ -159,6 +169,7 @@ async def test_enrichment_not_called_for_already_enriched(initialized_test_db) -
     await process_event_atomically(
         event_id=event2.event_id,
         url=event2.url,
+        url_hash=event2.url_hash,
         domain=event2.domain,
         timestamp=event2.timestamp,
     )
@@ -205,6 +216,7 @@ async def test_event_validation_rejects_empty_url() -> None:
     with pytest.raises(ValueError, match="URL cannot be empty"):
         DocumentAccessEvent(
             url="",
+            url_hash="somehash",
             domain="example.com",
             query_hash="hash123",
             request_id="req123",
@@ -217,6 +229,7 @@ async def test_event_validation_rejects_empty_domain() -> None:
     with pytest.raises(ValueError, match="Domain cannot be empty"):
         DocumentAccessEvent(
             url="https://example.com",
+            url_hash="somehash",
             domain="",
             query_hash="hash123",
             request_id="req123",

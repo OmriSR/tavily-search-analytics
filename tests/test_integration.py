@@ -30,12 +30,14 @@ async def test_duplicate_events_are_idempotent(initialized_test_db) -> None:
     result1 = await process_event_atomically(
         event_id=event.event_id,
         url=event.url,
+        url_hash=event.url_hash,
         domain=event.domain,
         timestamp=event.timestamp,
     )
     result2 = await process_event_atomically(
         event_id=event.event_id,
         url=event.url,
+        url_hash=event.url_hash,
         domain=event.domain,
         timestamp=event.timestamp,
     )
@@ -44,7 +46,7 @@ async def test_duplicate_events_are_idempotent(initialized_test_db) -> None:
     assert result2 is False, "Second event should be rejected as duplicate"
 
     # Verify counter is 1, not 2
-    stats = await get_url_stats(event.url)
+    stats = await get_url_stats(event.url_hash)
     assert stats is not None
     assert stats["access_count"] == 1, "Count should be exactly 1, not 2"
 
@@ -115,6 +117,7 @@ async def test_counters_correct_after_partial_failure(initialized_test_db) -> No
     result = await process_event_atomically(
         event_id=event.event_id,
         url=event.url,
+        url_hash=event.url_hash,
         domain=event.domain,
         timestamp=event.timestamp,
     )
@@ -124,7 +127,7 @@ async def test_counters_correct_after_partial_failure(initialized_test_db) -> No
     await processor._handle_enrichment(url)
 
     # Counters should still be correct
-    stats = await get_url_stats(url)
+    stats = await get_url_stats(event.url_hash)
     assert stats is not None
     assert stats["access_count"] == 1, "Counter should update even if enrichment fails"
     assert stats["enriched"] is False, "URL should not be marked enriched"
@@ -140,6 +143,10 @@ async def test_concurrent_events_atomic(initialized_test_db) -> None:
     domain = "concurrent-test.example.com"
     num_events = 100
 
+    # Create one event to get the url_hash (all events share the same URL)
+    sample_event = create_test_event(url=url, domain=domain)
+    url_hash = sample_event.url_hash
+
     async def process_single_event(event_id: str) -> bool:
         event = create_test_event(
             url=url,
@@ -149,6 +156,7 @@ async def test_concurrent_events_atomic(initialized_test_db) -> None:
         return await process_event_atomically(
             event_id=event.event_id,
             url=event.url,
+            url_hash=event.url_hash,
             domain=event.domain,
             timestamp=event.timestamp,
         )
@@ -162,7 +170,7 @@ async def test_concurrent_events_atomic(initialized_test_db) -> None:
     assert sum(results) == num_events
 
     # Counter should be exactly 100
-    stats = await get_url_stats(url)
+    stats = await get_url_stats(url_hash)
     assert stats is not None
     assert stats["access_count"] == num_events, f"Count should be {num_events}"
 
@@ -185,6 +193,10 @@ async def test_concurrent_duplicate_events_handled_correctly(
     domain = "concurrent-dupe-test.example.com"
     shared_event_id = "shared-event-id-456"
 
+    # Create one event to get the url_hash
+    sample_event = create_test_event(url=url, domain=domain, event_id=shared_event_id)
+    url_hash = sample_event.url_hash
+
     async def process_same_event() -> bool:
         event = create_test_event(
             url=url,
@@ -194,6 +206,7 @@ async def test_concurrent_duplicate_events_handled_correctly(
         return await process_event_atomically(
             event_id=event.event_id,
             url=event.url,
+            url_hash=event.url_hash,
             domain=event.domain,
             timestamp=event.timestamp,
         )
@@ -206,7 +219,7 @@ async def test_concurrent_duplicate_events_handled_correctly(
     assert successes == 1, f"Expected 1 success, got {successes}"
 
     # Counter should be exactly 1
-    stats = await get_url_stats(url)
+    stats = await get_url_stats(url_hash)
     assert stats is not None, "URL stats should exist after successful processing"
     assert stats["access_count"] == 1, "Count should be 1 despite concurrent attempts"
 
@@ -230,6 +243,7 @@ async def test_enrichment_marked_after_success(initialized_test_db) -> None:
     await process_event_atomically(
         event_id=event.event_id,
         url=event.url,
+        url_hash=event.url_hash,
         domain=event.domain,
         timestamp=event.timestamp,
     )
@@ -260,6 +274,7 @@ async def test_domain_aggregation_correctness(initialized_test_db) -> None:
         await process_event_atomically(
             event_id=event.event_id,
             url=event.url,
+            url_hash=event.url_hash,
             domain=event.domain,
             timestamp=event.timestamp,
         )
