@@ -46,3 +46,19 @@ curl -X POST http://localhost:8000/search \
   -H "Content-Type: application/json" \
   -d '{"query": "How to review an home assignment?"}'
 ```
+
+Retrieve statistics for a specific query:
+```bash
+curl http://localhost:8000/analytics/query/abc123def456
+```
+
+Retrieve access statistics for a specific URL:
+```bash
+curl http://localhost:8000/analytics/url/xyz789hash
+```
+
+Retrieve aggregated statistics for a domain:
+```bash
+curl http://localhost:8000/analytics/domain/docs.example.com
+```
+
