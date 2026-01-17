@@ -26,16 +26,16 @@ app = FastAPI(
 @app.post("/enrich", response_model=EnrichResponse)
 async def enrich_url(request: EnrichRequest) -> EnrichResponse:
     """
-    Enrich a URL with additional metadata.
-
-    Simulates processing with random failures for testing retry logic.
+    Enrich a URL with additional metadata
+    * Simulates processing with random failures (about ~30% of requests will fail)
+    * the failing rate can be set in settings
     """
     logger.info(f"Enrichment request for URL: {request.url}")
 
-    # Simulate processing delay
+    # processing delay
     await asyncio.sleep(settings.enricher_delay_seconds)
 
-    # Random failure based on configured rate
+    # random failures (if a random number over uniform distribution is smaller than the failure rate - fail)
     if random.random() < settings.enricher_failure_rate:
         logger.warning(f"Simulated failure for URL: {request.url}")
         raise HTTPException(

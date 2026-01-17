@@ -1,10 +1,6 @@
-"""HTTP client for enricher service with exponential backoff retry."""
-
 import asyncio
 import logging
-
 import httpx
-
 from config import settings
 from core.models.schemas import EnrichResponse
 
@@ -12,11 +8,9 @@ logger = logging.getLogger(__name__)
 
 
 class EnrichmentClient:
-    """HTTP client for enricher service with exponential backoff retry.
-
-    Implements retry logic with exponential backoff:
-    - Retry delays: 1s, 2s, 4s, 8s, 16s
-    - Max 5 retries (configurable)
+    """
+    HTTP client for enricher service with exponential backoff retry"
+    * max_retires and the base_delay can be configured in settings or on init
     """
 
     def __init__(
@@ -25,9 +19,8 @@ class EnrichmentClient:
         max_retries: int | None = None,
         base_delay: float | None = None,
     ) -> None:
-        """Initialize enrichment client.
-
-        Args:
+        """
+        can be manualy set or use default:
             base_url: Base URL of the enricher service
             max_retries: Maximum number of retry attempts
             base_delay: Base delay in seconds for exponential backoff
@@ -37,30 +30,14 @@ class EnrichmentClient:
         self._base_delay = base_delay or settings.retry_base_delay_seconds
 
     def _calculate_delay(self, attempt: int) -> float:
-        """Calculate exponential backoff delay.
-
-        Args:
-            attempt: Current attempt number (0-indexed)
-
-        Returns:
-            Delay in seconds for the given attempt
-
-        Examples:
-            attempt 0 -> 1s
-            attempt 1 -> 2s
-            attempt 2 -> 4s
-            attempt 3 -> 8s
-            attempt 4 -> 16s
-        """
+        """Calculate exponential backoff delay"""
         return self._base_delay * (2**attempt)
 
     async def enrich(self, url: str) -> EnrichResponse:
-        """Attempt to enrich a URL with exponential backoff retry.
-
-        Returns EnrichResponse with enriched=True on success, enriched=False on failure.
         """
-        last_exception: Exception | None = None
-
+        Attempt to enrich a URL with exponential backoff retry
+        returns EnrichResponse with enriched=True on success, enriched=False on failure.
+        """
         for attempt in range(self._max_retries):
             try:
                 async with httpx.AsyncClient() as client:
