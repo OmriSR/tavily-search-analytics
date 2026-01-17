@@ -10,7 +10,7 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
-# Static system prompt for prompt caching
+# static system prompt to allow prompt caching
 SYSTEM_PROMPT = """You are a helpful assistant that answers questions based on provided search results.
 
 Instructions:
@@ -18,7 +18,7 @@ Instructions:
 - If the sources conflict, mention the different perspectives
 - If the information is insufficient, acknowledge limitations"""
 
-# Human prompt template with dynamic data
+# insert dynamic data to human prompt
 HUMAN_PROMPT = """Query: {query}
 
 Tavily Answer:
@@ -34,11 +34,7 @@ class LLMService:
     """LangChain-based RAG service for generating AI answers."""
 
     def __init__(self, model: str | None = None) -> None:
-        """Initialize LLM service with specified model.
-
-        Args:
-            model: OpenAI model name (defaults to settings.openai_model)
-        """
+        """Initialize LLM service with specified model"""
         self._model_name = model or settings.openai_model
         self._llm = ChatOpenAI(
             model=self._model_name,
@@ -48,11 +44,12 @@ class LLMService:
         self._chain = self._prompt | self._llm | StrOutputParser()
 
     def _build_prompt(self) -> ChatPromptTemplate:
-        """Build the RAG prompt template with static system prompt for caching."""
-        return ChatPromptTemplate.from_messages([
-            ("system", SYSTEM_PROMPT),
-            ("human", HUMAN_PROMPT),
-        ])
+        return ChatPromptTemplate.from_messages(
+            [
+                ("system", SYSTEM_PROMPT),
+                ("human", HUMAN_PROMPT),
+            ]
+        )
 
     async def generate_answer(
         self,
@@ -60,17 +57,14 @@ class LLMService:
         tavily_answer: str,
         contexts: list[dict[str, str]],
     ) -> str:
-        """Generate an enhanced answer using Tavily's answer and document contexts.
+        """Generate an answer based on Tavily's answer
 
-        Args:
+        Arguments:
             query: The original user query
-            tavily_answer: The answer provided by Tavily API
+            tavily_answer: The answer provided by Tavily API (fallback)
             contexts: List of dicts with 'url', 'title', 'content' keys
-
-        Returns:
-            Generated answer string
         """
-        # Format contexts for the prompt
+        # format the contexts as a string for the prompt
         formatted_contexts = "\n\n".join(
             [
                 f"Source: {ctx.get('url', 'Unknown')}\n"
@@ -80,15 +74,10 @@ class LLMService:
             ]
         )
 
-        # Invoke the chain
-        result = await self._chain.ainvoke(
+        return await self._chain.ainvoke(
             {
                 "query": query,
                 "tavily_answer": tavily_answer,
                 "contexts": formatted_contexts,
             }
         )
-
-        logger.info(f"Generated LLM answer for query: '{query[:50]}...'")
-
-        return result
