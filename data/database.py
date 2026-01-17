@@ -66,17 +66,6 @@ async def _create_schema(db: aiosqlite.Connection) -> None:
     """
     )
 
-    # Query cache table
-    await db.execute(
-        """
-        CREATE TABLE IF NOT EXISTS query_cache (
-            query_hash TEXT PRIMARY KEY,
-            response_json TEXT NOT NULL,
-            expires_at TEXT NOT NULL
-        )
-    """
-    )
-
     # Query statistics table
     await db.execute(
         """
@@ -109,9 +98,6 @@ async def _create_schema(db: aiosqlite.Connection) -> None:
     # Create indexes for common queries
     await db.execute(
         "CREATE INDEX IF NOT EXISTS idx_url_stats_domain ON url_stats(domain)"
-    )
-    await db.execute(
-        "CREATE INDEX IF NOT EXISTS idx_query_cache_expires ON query_cache(expires_at)"
     )
 
 

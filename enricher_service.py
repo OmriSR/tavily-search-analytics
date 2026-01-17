@@ -7,7 +7,7 @@ import random
 from fastapi import FastAPI, HTTPException
 
 from config import settings
-from models.schemas import EnrichRequest, EnrichResponse
+from core.models.schemas import EnrichRequest, EnrichResponse
 
 # Configure logging
 logging.basicConfig(

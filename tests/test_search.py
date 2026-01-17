@@ -1,14 +1,13 @@
 """Tests for search endpoint and related functionality."""
 
-import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import BackgroundTasks
 
 from api.search import compute_query_hash, extract_domain
-from models.schemas import SearchRequest, SearchResponse
-from services.tavily_client import TavilyResult, TavilySearchResult
-from storage.cache import cache_response, get_cached_response
+from core.models.schemas import SearchRequest, SearchResponse
+from core.services.tavily_client import TavilyResult, TavilySearchResult
 
 
 class TestQueryHash:
@@ -44,7 +43,10 @@ class TestDomainExtraction:
     def test_extract_domain_with_subdomain(self) -> None:
         """Extract full subdomain, not just root domain."""
         assert extract_domain("https://docs.example.com/page") == "docs.example.com"
-        assert extract_domain("https://api.v2.example.com/endpoint") == "api.v2.example.com"
+        assert (
+            extract_domain("https://api.v2.example.com/endpoint")
+            == "api.v2.example.com"
+        )
 
     def test_extract_domain_with_port(self) -> None:
         """Domain should include port if present."""
@@ -83,7 +85,9 @@ async def test_search_returns_valid_response_format(initialized_test_db) -> None
 
     with (
         patch("api.search.tavily_client.search", new_callable=AsyncMock) as mock_tavily,
-        patch("api.search.llm_service.generate_answer", new_callable=AsyncMock) as mock_llm,
+        patch(
+            "api.search.llm_service.generate_answer", new_callable=AsyncMock
+        ) as mock_llm,
         patch("api.search.processor.enqueue", new_callable=AsyncMock),
     ):
         mock_tavily.return_value = mock_tavily_result
@@ -92,20 +96,23 @@ async def test_search_returns_valid_response_format(initialized_test_db) -> None
         from api.search import search
 
         request = SearchRequest(query="test query")
-        response = await search(request)
+        mock_background_tasks = MagicMock(spec=BackgroundTasks)
+        response = await search(request, mock_background_tasks)
 
         # Verify response format
         assert isinstance(response, SearchResponse)
         assert response.request_id == "test-request-123"
         assert response.query == "test query"
         assert response.answer == mock_llm_answer
-        assert response.is_cached_response is False
         assert len(response.sources) == 2
 
         # Verify sources
         assert response.sources[0].url == "https://example.com/result1"
         assert response.sources[0].title == "Test Result 1"
         assert response.sources[1].url == "https://docs.example.com/result2"
+
+        # Verify background task was scheduled
+        mock_background_tasks.add_task.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -140,7 +147,9 @@ async def test_search_extracts_sources_correctly(initialized_test_db) -> None:
 
     with (
         patch("api.search.tavily_client.search", new_callable=AsyncMock) as mock_tavily,
-        patch("api.search.llm_service.generate_answer", new_callable=AsyncMock) as mock_llm,
+        patch(
+            "api.search.llm_service.generate_answer", new_callable=AsyncMock
+        ) as mock_llm,
         patch("api.search.processor.enqueue", new_callable=AsyncMock),
     ):
         mock_tavily.return_value = mock_tavily_result
@@ -149,7 +158,8 @@ async def test_search_extracts_sources_correctly(initialized_test_db) -> None:
         from api.search import search
 
         request = SearchRequest(query="test query")
-        response = await search(request)
+        mock_background_tasks = MagicMock(spec=BackgroundTasks)
+        response = await search(request, mock_background_tasks)
 
         # Verify all 3 sources extracted
         assert len(response.sources) == 3
@@ -165,45 +175,6 @@ async def test_search_extracts_sources_correctly(initialized_test_db) -> None:
         assert "Wikipedia Article" in titles
         assert "Documentation" in titles
         assert "Stack Overflow" in titles
-
-
-@pytest.mark.asyncio
-async def test_search_cache_hit_skips_api_calls(initialized_test_db) -> None:
-    """Cached response should return without calling Tavily or LLM APIs."""
-    query = "cached query test"
-    query_hash = compute_query_hash(query)
-
-    # Pre-populate cache
-    cached_response = {
-        "request_id": "cached-request-id",
-        "query": query,
-        "query_hash": query_hash,
-        "answer": "This is the cached answer",
-        "sources": [
-            {"url": "https://cached.example.com", "title": "Cached", "snippet": "Cached content"}
-        ],
-        "created_at": "2024-01-01T00:00:00Z",
-        "is_cached_response": False,
-    }
-    await cache_response(query_hash, cached_response, ttl_seconds=3600)
-
-    with (
-        patch("api.search.tavily_client.search", new_callable=AsyncMock) as mock_tavily,
-        patch("api.search.llm_service.generate_answer", new_callable=AsyncMock) as mock_llm,
-    ):
-        from api.search import search
-
-        request = SearchRequest(query=query)
-        response = await search(request)
-
-        # Tavily and LLM should NOT be called
-        mock_tavily.assert_not_called()
-        mock_llm.assert_not_called()
-
-        # Response should be from cache
-        assert response.is_cached_response is True
-        assert response.answer == "This is the cached answer"
-        assert response.request_id == "cached-request-id"
 
 
 @pytest.mark.asyncio
@@ -232,16 +203,31 @@ async def test_search_emits_document_access_events(initialized_test_db) -> None:
 
     with (
         patch("api.search.tavily_client.search", new_callable=AsyncMock) as mock_tavily,
-        patch("api.search.llm_service.generate_answer", new_callable=AsyncMock) as mock_llm,
+        patch(
+            "api.search.llm_service.generate_answer", new_callable=AsyncMock
+        ) as mock_llm,
         patch("api.search.processor.enqueue", new_callable=AsyncMock) as mock_enqueue,
     ):
         mock_tavily.return_value = mock_tavily_result
         mock_llm.return_value = "LLM answer"
 
-        from api.search import search
+        from api.search import _process_search_analytics, search
 
         request = SearchRequest(query="event emission test")
-        await search(request)
+        mock_background_tasks = MagicMock(spec=BackgroundTasks)
+        await search(request, mock_background_tasks)
+
+        # Verify background task was scheduled with analytics processing
+        mock_background_tasks.add_task.assert_called_once()
+        call_args = mock_background_tasks.add_task.call_args
+        assert call_args[0][0] == _process_search_analytics
+
+        # Execute the background task to verify events are enqueued
+        await _process_search_analytics(
+            call_args[0][1],  # query_hash
+            call_args[0][2],  # query_text
+            call_args[0][3],  # tavily_result
+        )
 
         # Verify enqueue was called for each result
         assert mock_enqueue.call_count == 2
@@ -253,7 +239,9 @@ async def test_search_emits_document_access_events(initialized_test_db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_search_llm_failure_falls_back_to_tavily_answer(initialized_test_db) -> None:
+async def test_search_llm_failure_falls_back_to_tavily_answer(
+    initialized_test_db,
+) -> None:
     """If LLM fails, should fall back to Tavily's answer."""
     mock_tavily_result = TavilySearchResult(
         query="fallback test",
@@ -272,7 +260,9 @@ async def test_search_llm_failure_falls_back_to_tavily_answer(initialized_test_d
 
     with (
         patch("api.search.tavily_client.search", new_callable=AsyncMock) as mock_tavily,
-        patch("api.search.llm_service.generate_answer", new_callable=AsyncMock) as mock_llm,
+        patch(
+            "api.search.llm_service.generate_answer", new_callable=AsyncMock
+        ) as mock_llm,
         patch("api.search.processor.enqueue", new_callable=AsyncMock),
     ):
         mock_tavily.return_value = mock_tavily_result
@@ -281,7 +271,8 @@ async def test_search_llm_failure_falls_back_to_tavily_answer(initialized_test_d
         from api.search import search
 
         request = SearchRequest(query="fallback test")
-        response = await search(request)
+        mock_background_tasks = MagicMock(spec=BackgroundTasks)
+        response = await search(request, mock_background_tasks)
 
         # Should use Tavily's answer as fallback
         assert response.answer == "Tavily fallback answer"
@@ -292,22 +283,3 @@ async def test_search_request_validation() -> None:
     """Verify SearchRequest validates query is not empty."""
     with pytest.raises(ValueError):
         SearchRequest(query="")
-
-
-@pytest.mark.asyncio
-async def test_cache_expiration(initialized_test_db) -> None:
-    """Verify expired cache entries are not returned."""
-    query_hash = "expired-cache-hash"
-
-    # Cache with 0 second TTL (immediately expires)
-    await cache_response(
-        query_hash,
-        {"data": "test"},
-        ttl_seconds=0,
-    )
-
-    # Should return None for expired entry
-    await asyncio.sleep(0.1)  # Ensure time has passed
-
-    result = await get_cached_response(query_hash)
-    assert result is None

@@ -4,10 +4,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from models.events import DocumentAccessEvent
-from models.schemas import EnrichResponse
-from processors.document_access import DocumentAccessProcessor
-from storage.analytics_repo import get_url_stats, is_enriched, process_event_atomically
+from core.document_access_processor import DocumentAccessProcessor
+from core.models.events import DocumentAccessEvent
+from core.models.schemas import EnrichResponse
+from data.analytics_repo import get_url_stats, is_enriched, process_event_atomically
 from tests.conftest import create_test_event
 
 
@@ -190,6 +190,7 @@ async def test_processor_enqueue_and_process(initialized_test_db) -> None:
 
     # Give processor time to process the event
     import asyncio
+
     await asyncio.sleep(0.5)
 
     await processor.stop()
@@ -244,6 +245,7 @@ async def test_processor_graceful_shutdown(initialized_test_db) -> None:
 
     # Give the processor a moment to potentially start processing
     import asyncio
+
     await asyncio.sleep(0.1)
 
     # Stop should drain remaining events

@@ -6,16 +6,15 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from models.schemas import EnrichResponse
-from processors.document_access import DocumentAccessProcessor
-from services.enrichment_client import EnrichmentClient
-from storage.analytics_repo import (
+from core.document_access_processor import DocumentAccessProcessor
+from core.models.schemas import EnrichResponse
+from core.services.enrichment_client import EnrichmentClient
+from data.analytics_repo import (
     get_domain_stats,
     get_url_stats,
     is_enriched,
     process_event_atomically,
 )
-from storage.cache import cache_response, get_cached_response
 from tests.conftest import create_test_event
 
 
@@ -210,38 +209,6 @@ async def test_concurrent_duplicate_events_handled_correctly(
     stats = await get_url_stats(url)
     assert stats is not None, "URL stats should exist after successful processing"
     assert stats["access_count"] == 1, "Count should be 1 despite concurrent attempts"
-
-
-@pytest.mark.asyncio
-async def test_search_caching_returns_same_response(initialized_test_db) -> None:
-    """Second query hits cache - verify cached response returned."""
-    query_hash = "test-query-hash-123"
-    original_response = {
-        "request_id": "req-123",
-        "query": "test query",
-        "query_hash": query_hash,
-        "answer": "This is the answer",
-        "sources": [],
-        "created_at": "2024-01-01T00:00:00Z",
-        "is_cached_response": False,
-    }
-
-    # Cache the response
-    await cache_response(query_hash, original_response, ttl_seconds=3600)
-
-    # Retrieve from cache
-    cached = await get_cached_response(query_hash)
-
-    assert cached is not None
-    assert cached["request_id"] == original_response["request_id"]
-    assert cached["answer"] == original_response["answer"]
-
-
-@pytest.mark.asyncio
-async def test_cache_miss_returns_none(initialized_test_db) -> None:
-    """Non-existent query returns None from cache."""
-    result = await get_cached_response("non-existent-hash")
-    assert result is None
 
 
 @pytest.mark.asyncio

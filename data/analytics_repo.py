@@ -1,155 +1,83 @@
-"""Analytics repository for URL and domain statistics."""
-
 import logging
 from datetime import UTC, datetime
 
 import aiosqlite
 
-from storage.database import get_database_connection, transaction
+from data.database import get_database_connection, transaction
 
 logger = logging.getLogger(__name__)
 
 
-async def is_duplicate(event_id: str, db: aiosqlite.Connection | None = None) -> bool:
+async def is_duplicate(event_id: str, db: aiosqlite.Connection) -> bool:
     """Check if an event has already been processed."""
-    if db is not None:
-        cursor = await db.execute(
-            "SELECT 1 FROM processed_events WHERE event_id = ?",
-            (event_id,),
-        )
-        row = await cursor.fetchone()
-        return row is not None
-
-    async with get_database_connection() as conn:
-        cursor = await conn.execute(
-            "SELECT 1 FROM processed_events WHERE event_id = ?",
-            (event_id,),
-        )
-        row = await cursor.fetchone()
-        return row is not None
+    cursor = await db.execute(
+        "SELECT 1 FROM processed_events WHERE event_id = ?",
+        (event_id,),
+    )
+    row = await cursor.fetchone()
+    return row is not None
 
 
-async def mark_processed(event_id: str, db: aiosqlite.Connection | None = None) -> None:
+async def mark_processed(event_id: str, db: aiosqlite.Connection) -> None:
     """Mark an event as processed (within a transaction)."""
     timestamp = datetime.now(UTC).isoformat()
-
-    if db is not None:
-        await db.execute(
-            "INSERT INTO processed_events (event_id, processed_at) VALUES (?, ?)",
-            (event_id, timestamp),
-        )
-        return
-
-    async with get_database_connection() as conn:
-        await conn.execute(
-            "INSERT INTO processed_events (event_id, processed_at) VALUES (?, ?)",
-            (event_id, timestamp),
-        )
-        await conn.commit()
+    await db.execute(
+        "INSERT INTO processed_events (event_id, processed_at) VALUES (?, ?)",
+        (event_id, timestamp),
+    )
 
 
 async def increment_url_count(
-    url: str, domain: str, timestamp: str, db: aiosqlite.Connection | None = None
+    url: str, domain: str, timestamp: str, db: aiosqlite.Connection
 ) -> None:
     """Increment URL access count (upsert operation)."""
-    if db is not None:
-        await db.execute(
-            """
-            INSERT INTO url_stats (url, domain, access_count, first_accessed, last_accessed, enriched)
-            VALUES (?, ?, 1, ?, ?, 0)
-            ON CONFLICT(url) DO UPDATE SET
-                access_count = access_count + 1,
-                last_accessed = ?
-            """,
-            (url, domain, timestamp, timestamp, timestamp),
-        )
-        return
-
-    async with get_database_connection() as conn:
-        await conn.execute(
-            """
-            INSERT INTO url_stats (url, domain, access_count, first_accessed, last_accessed, enriched)
-            VALUES (?, ?, 1, ?, ?, 0)
-            ON CONFLICT(url) DO UPDATE SET
-                access_count = access_count + 1,
-                last_accessed = ?
-            """,
-            (url, domain, timestamp, timestamp, timestamp),
-        )
-        await conn.commit()
+    await db.execute(
+        """
+        INSERT INTO url_stats (url, domain, access_count, first_accessed, last_accessed, enriched)
+        VALUES (?, ?, 1, ?, ?, 0)
+        ON CONFLICT(url) DO UPDATE SET
+            access_count = access_count + 1,
+            last_accessed = ?
+        """,
+        (url, domain, timestamp, timestamp, timestamp),
+    )
 
 
 async def increment_domain_count(
-    domain: str, url: str, timestamp: str, db: aiosqlite.Connection | None = None
+    domain: str, url: str, timestamp: str, db: aiosqlite.Connection
 ) -> None:
     """Increment domain access count and unique URL count."""
-    if db is not None:
-        # Check if this URL is new for the domain
-        cursor = await db.execute(
-            "SELECT 1 FROM url_stats WHERE url = ? AND access_count = 1",
-            (url,),
+    # Check if this URL is new for the domain
+    cursor = await db.execute(
+        "SELECT 1 FROM url_stats WHERE url = ? AND access_count = 1",
+        (url,),
+    )
+    is_new_url = await cursor.fetchone() is not None
+
+    # If new URL, increment unique_urls; always increment access_count
+    if is_new_url:
+        await db.execute(
+            """
+            INSERT INTO domain_stats (domain, access_count, unique_urls, first_accessed, last_accessed)
+            VALUES (?, 1, 1, ?, ?)
+            ON CONFLICT(domain) DO UPDATE SET
+                access_count = access_count + 1,
+                unique_urls = unique_urls + 1,
+                last_accessed = ?
+            """,
+            (domain, timestamp, timestamp, timestamp),
         )
-        is_new_url = await cursor.fetchone() is not None
-
-        # If new URL, increment unique_urls; always increment access_count
-        if is_new_url:
-            await db.execute(
-                """
-                INSERT INTO domain_stats (domain, access_count, unique_urls, first_accessed, last_accessed)
-                VALUES (?, 1, 1, ?, ?)
-                ON CONFLICT(domain) DO UPDATE SET
-                    access_count = access_count + 1,
-                    unique_urls = unique_urls + 1,
-                    last_accessed = ?
-                """,
-                (domain, timestamp, timestamp, timestamp),
-            )
-        else:
-            await db.execute(
-                """
-                INSERT INTO domain_stats (domain, access_count, unique_urls, first_accessed, last_accessed)
-                VALUES (?, 1, 1, ?, ?)
-                ON CONFLICT(domain) DO UPDATE SET
-                    access_count = access_count + 1,
-                    last_accessed = ?
-                """,
-                (domain, timestamp, timestamp, timestamp),
-            )
-        return
-
-    async with get_database_connection() as conn:
-        # Check if this URL is new for the domain
-        cursor = await conn.execute(
-            "SELECT 1 FROM url_stats WHERE url = ? AND access_count = 1",
-            (url,),
+    else:
+        await db.execute(
+            """
+            INSERT INTO domain_stats (domain, access_count, unique_urls, first_accessed, last_accessed)
+            VALUES (?, 1, 1, ?, ?)
+            ON CONFLICT(domain) DO UPDATE SET
+                access_count = access_count + 1,
+                last_accessed = ?
+            """,
+            (domain, timestamp, timestamp, timestamp),
         )
-        is_new_url = await cursor.fetchone() is not None
-
-        # If new URL, increment unique_urls; always increment access_count
-        if is_new_url:
-            await conn.execute(
-                """
-                INSERT INTO domain_stats (domain, access_count, unique_urls, first_accessed, last_accessed)
-                VALUES (?, 1, 1, ?, ?)
-                ON CONFLICT(domain) DO UPDATE SET
-                    access_count = access_count + 1,
-                    unique_urls = unique_urls + 1,
-                    last_accessed = ?
-                """,
-                (domain, timestamp, timestamp, timestamp),
-            )
-        else:
-            await conn.execute(
-                """
-                INSERT INTO domain_stats (domain, access_count, unique_urls, first_accessed, last_accessed)
-                VALUES (?, 1, 1, ?, ?)
-                ON CONFLICT(domain) DO UPDATE SET
-                    access_count = access_count + 1,
-                    last_accessed = ?
-                """,
-                (domain, timestamp, timestamp, timestamp),
-            )
-        await conn.commit()
 
 
 async def update_query_stats(
@@ -305,7 +233,7 @@ async def get_query_stats(query_hash: str) -> dict | None:
         urls = [r[0] for r in await url_cursor.fetchall()]
 
         return {
-            "query_hash": row[0],
+            "query_hash": row[0],  # add for testing
             "query": row[1],
             "total_requests": row[2],
             "successful_requests": row[3],

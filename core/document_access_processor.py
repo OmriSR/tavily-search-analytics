@@ -3,9 +3,9 @@ import contextlib
 import logging
 from asyncio import Queue, Task
 
-from models.events import DocumentAccessEvent
-from services.enrichment_client import EnrichmentClient
-from storage.analytics_repo import (
+from core.models.events import DocumentAccessEvent
+from core.services.enrichment_client import EnrichmentClient
+from data.analytics_repo import (
     is_enriched,
     mark_enriched,
     process_event_atomically,
@@ -50,7 +50,7 @@ class DocumentAccessProcessor:
         logger.info("Stopping Document Access Processor...")
         self._running = False
 
-        # if a restart or manual shutdown occurs - finish remaining events (worker crashes / restarts correctness)
+        # finish remaining events
         drained_count = 0
         while not self._queue.empty():
             try:
@@ -114,7 +114,7 @@ class DocumentAccessProcessor:
         Args:
             event: The document access event to process
         """
-        # dedup check + mark + counter updates executed atomically - all or nothing
+        # dedup check + mark + counter updates executed atomically - all or nothing (worker crashes / restarts correctness)
         processed = await process_event_atomically(
             event_id=event.event_id,
             url=event.url,
@@ -128,18 +128,14 @@ class DocumentAccessProcessor:
 
         logger.info(f"Processed event {event.event_id} for URL: {event.url}")
 
-        # Handle enrichment outside transaction since it is not
+        # Handle enrichment outside transaction since it is not part of the atomic counters update
         await self._handle_enrichment(event.url)
 
     async def _handle_enrichment(self, url: str) -> None:
-        """Handle URL enrichment with retry logic.
-
-        Uses exponential backoff: 1s, 2s, 4s, 8s, 16s (max 5 retries)
-
-        Args:
-            url: The URL to enrich
+        """Handle URL enrichment with retry logic
+        * uses exponential backoff: 1s, 2s, 4s, 8s, 16s (max 5 retries)
         """
-        # Check if already enriched - improves latency and unstable resource stability (partial failures during enrichment correctness)
+        # check if already enriched - improves latency and unstable resource stability (partial failures during enrichment correctness)
         if await is_enriched(url):
             logger.debug(f"URL already enriched: {url}")
             return

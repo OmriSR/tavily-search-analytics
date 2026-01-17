@@ -5,8 +5,8 @@ from urllib.parse import unquote
 
 from fastapi import APIRouter, HTTPException
 
-from models.schemas import DomainAnalytics, QueryAnalytics, UrlAnalytics
-from storage.analytics_repo import get_domain_stats, get_query_stats, get_url_stats
+from core.models.schemas import DomainAnalytics, QueryAnalytics, UrlAnalytics
+from data.analytics_repo import get_domain_stats, get_query_stats, get_url_stats
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

@@ -6,7 +6,7 @@ import logging
 import httpx
 
 from config import settings
-from models.schemas import EnrichResponse
+from core.models.schemas import EnrichResponse
 
 logger = logging.getLogger(__name__)
 

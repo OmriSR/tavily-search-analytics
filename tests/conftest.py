@@ -1,6 +1,5 @@
 """Pytest fixtures for isolated testing."""
 
-import asyncio
 import tempfile
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
@@ -14,19 +13,10 @@ import pytest_asyncio
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
-from models.events import DocumentAccessEvent
-from models.schemas import EnrichResponse
-from processors.document_access import DocumentAccessProcessor
-from services.enrichment_client import EnrichmentClient
-
-
-# Event loop fixture for async tests
-@pytest.fixture(scope="session")
-def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
-    """Create event loop for async tests."""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
+from core.document_access_processor import DocumentAccessProcessor
+from core.models.events import DocumentAccessEvent
+from core.models.schemas import EnrichResponse
+from core.services.enrichment_client import EnrichmentClient
 
 
 async def create_schema(db: aiosqlite.Connection) -> None:
@@ -67,16 +57,6 @@ async def create_schema(db: aiosqlite.Connection) -> None:
 
     await db.execute(
         """
-        CREATE TABLE IF NOT EXISTS query_cache (
-            query_hash TEXT PRIMARY KEY,
-            response_json TEXT NOT NULL,
-            expires_at TEXT NOT NULL
-        )
-    """
-    )
-
-    await db.execute(
-        """
         CREATE TABLE IF NOT EXISTS query_stats (
             query_hash TEXT PRIMARY KEY,
             query_text TEXT NOT NULL,
@@ -103,9 +83,6 @@ async def create_schema(db: aiosqlite.Connection) -> None:
     await db.execute(
         "CREATE INDEX IF NOT EXISTS idx_url_stats_domain ON url_stats(domain)"
     )
-    await db.execute(
-        "CREATE INDEX IF NOT EXISTS idx_query_cache_expires ON query_cache(expires_at)"
-    )
 
     await db.commit()
 
@@ -129,9 +106,7 @@ def mock_db_connection(test_db: aiosqlite.Connection) -> Generator[None, None, N
     async def get_test_db_connection() -> AsyncGenerator[aiosqlite.Connection, None]:
         yield test_db
 
-    with (
-        patch("storage.database.get_database_connection", get_test_db_connection),
-    ):
+    with (patch("data.database.get_database_connection", get_test_db_connection),):
         yield
 
 
@@ -162,9 +137,8 @@ async def initialized_test_db() -> AsyncGenerator[Path, None]:
             yield db
 
     with (
-        patch("storage.database.get_database_connection", get_test_db_connection),
-        patch("storage.analytics_repo.get_database_connection", get_test_db_connection),
-        patch("storage.cache.get_database_connection", get_test_db_connection),
+        patch("data.database.get_database_connection", get_test_db_connection),
+        patch("data.analytics_repo.get_database_connection", get_test_db_connection),
     ):
         yield db_path
 
