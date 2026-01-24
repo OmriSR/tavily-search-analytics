@@ -2,6 +2,9 @@
 
 A backend service for a "search + answer" product that combines Tavily search with LLM-generated answers and tracks document access analytics
 
+## Architecture
+![Tavily Search Analytics Architecture](https://github.com/user-attachments/assets/31086731-e133-4864-8f75-e567d09b5406)
+
 ## Setup Instructions
 
 ### Prerequisites
@@ -21,8 +24,6 @@ pip install -r requirements.txt
 TAVILY_API_KEY=your_tavily_api_key
 OPENAI_API_KEY=your_openai_api_key
 ```
-## Architecture Diagram
-![Tavily Search Analytics Architecture](https://github.com/user-attachments/assets/31086731-e133-4864-8f75-e567d09b5406)
 
 ## Running the Service Locally
 The service consists of two components that need to run simultaneously.
